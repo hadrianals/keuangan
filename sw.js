@@ -1,5 +1,5 @@
 // Naikkan nomor versi ini setiap kali kamu mengubah file aplikasi (v1 -> v2 -> v3).
-const V = 'keuangan-v1';
+const V = 'keuangan-v2';
 const FILES = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
