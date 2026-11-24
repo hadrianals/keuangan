@@ -40,6 +40,11 @@ input{width:100%;font:inherit;padding:12px 14px;border:1px solid var(--line);bor
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 16px;border-radius:999px;font:inherit;cursor:pointer;min-height:44px}
 .chips button.on{background:var(--accent);border-color:var(--accent);color:var(--on)}
+.chips .addc{border-style:dashed;color:var(--mute)}
+.chips .xc{border-color:var(--out);color:var(--out)}
+.newc{display:flex;gap:8px;margin-top:10px}
+.newc input{flex:1}
+.newc button{border:0;border-radius:12px;background:var(--accent);color:var(--on);font:inherit;font-weight:600;padding:0 18px;cursor:pointer}
 .primary{width:100%;margin-top:24px;padding:14px;border:0;border-radius:14px;background:var(--accent);color:var(--on);font:inherit;font-weight:700;font-size:17px;cursor:pointer}
 .ghost{width:100%;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
 h3{margin:22px 0 8px;font-size:14px;color:var(--mute);font-weight:600}
@@ -95,6 +100,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
     <input id="amt" inputmode="numeric" autocomplete="off" placeholder="0">
     <label>Kategori</label>
     <div id="chips" class="chips"></div>
+    <div id="newc" class="newc" hidden><input id="newcat" maxlength="20" placeholder="Nama kategori baru" autocomplete="off"><button id="addcat">Tambah</button></div>
     <label for="note">Catatan (opsional)</label>
     <input id="note" maxlength="80" autocomplete="off">
     <label for="dt">Tanggal</label>
@@ -113,8 +119,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 <input id="file" type="file" accept=".json,application/json" hidden>
 
 <script>
-// Ubah daftar kategori di sini kalau perlu.
-const CAT={out:['Makan','Transportasi','Tagihan','Cicilan','Belanja','Lainnya'],in:['Gaji','Lainnya']};
+// Kategori awal. Kategori lain ditambah lewat tombol "+ Kategori" di aplikasi.
+const DEF={out:['Makan','Transportasi','Tagihan','Cicilan','Belanja'],in:['Gaji']};
 
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 const pad=n=>String(n).padStart(2,'0');
@@ -126,6 +132,15 @@ const sum=(L,t)=>L.filter(x=>x.type===t).reduce((s,x)=>s+x.amount,0);
 
 let db,rows=[],type='out',cat='',mk=today().slice(0,7),persisted=false;
 
+/* ---------- Kategori ---------- */
+let custom={out:[],in:[]},mg=false;
+try{const c=JSON.parse(LS.get('cats'));['out','in'].forEach(t=>{if(Array.isArray(c[t]))custom[t]=c[t].map(x=>String(x).trim().slice(0,20)).filter(Boolean)})}catch(e){}
+const saveCats=()=>LS.set('cats',JSON.stringify(custom));
+const same=(a,b)=>a.toLowerCase()===b.toLowerCase();
+const used=(t,c)=>rows.some(r=>r.type===t&&same(r.cat,c));
+function cats(t){const s=[];[...DEF[t],...custom[t],...rows.filter(r=>r.type===t).map(r=>r.cat)].forEach(c=>{if(!s.some(x=>same(x,c)))s.push(c)});return s}
+function addCat(t,name){name=String(name).replace(/\s+/g,' ').trim().slice(0,20);if(!name)return '';const f=cats(t).find(c=>same(c,name));if(f)return f;custom[t].push(name);saveCats();return name}
+
 /* ---------- IndexedDB ---------- */
 const open=()=>new Promise((res,rej)=>{const r=indexedDB.open('keuangan',1);r.onupgradeneeded=()=>r.result.createObjectStore('tx',{keyPath:'id',autoIncrement:true});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const req=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
@@ -136,7 +151,11 @@ const replaceAll=list=>new Promise((res,rej)=>{const t=db.transaction('tx','read
 /* ---------- UI ---------- */
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('show'),1800)}
 function show(v){['add','list','sum'].forEach(k=>$('#v-'+k).hidden=k!==v);$$('nav button').forEach(b=>b.ariaCurrent=b.dataset.v===v?'page':null)}
-function chips(){$('#chips').innerHTML=CAT[type].map(c=>`<button data-c="${esc(c)}" class="${c===cat?'on':''}">${esc(c)}</button>`).join('')}
+function chips(){
+  const L=cats(type),del=c=>custom[type].some(x=>same(x,c))&&!used(type,c),any=L.some(del);
+  if(!any)mg=false;
+  $('#chips').innerHTML=L.map(c=>mg&&del(c)?`<button data-x="${esc(c)}" class="xc">${esc(c)} ×</button>`:`<button data-c="${esc(c)}" class="${same(c,cat)?'on':''}">${esc(c)}</button>`).join('')+`<button data-add class="addc">+ Kategori</button>`+(any?`<button data-mg class="addc">${mg?'Selesai':'Kelola'}</button>`:'');
+}
 function shift(n){let[y,m]=mk.split('-').map(Number);m+=n;if(m<1){m=12;y--}if(m>12){m=1;y++}mk=y+'-'+pad(m);render()}
 const fmtDay=d=>new Date(d+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'});
 
@@ -147,7 +166,7 @@ function render(){
   $('#bal').textContent=(bal<0?'−':'')+rp(Math.abs(bal));
   $('#tin').textContent=rp(tin);$('#tout').textContent=rp(tout);
   const pct=tin>0?Math.min(100,tout/tin*100):(tout>0?100:0);$('#mtr').style.width=pct+'%';$('#mtr').parentNode.classList.toggle('over',tout>tin);$('#bal').classList.toggle('neg',bal<0);
-  renderList(L);renderSum(L);renderWarn();
+  renderList(L);renderSum(L);renderWarn();chips();
 }
 
 function renderList(L){
@@ -161,8 +180,8 @@ function renderList(L){
   $('#v-list').innerHTML=h;
 }
 
-const PAL=['#5B84B1','#7FB3A0','#D99A7E','#A68CC4','#E0B863','#9AA7B8'];
-const ci=k=>{const i=CAT.out.indexOf(k);return i<0?5:i};
+const PAL=['#5B84B1','#7FB3A0','#D99A7E','#A68CC4','#E0B863','#9AA7B8','#C98FA6','#6FA8B5'];
+const ci=k=>Math.max(0,cats('out').findIndex(c=>same(c,k)))%PAL.length;
 const short=n=>n>=1e6?(n/1e6).toFixed(1).replace('.',',')+' jt':n>=1e3?Math.round(n/1e3)+' rb':String(Math.round(n));
 
 function donut(e,tot){
@@ -230,7 +249,7 @@ function saveFile(name,text,mime){
 }
 const stamp=()=>today();
 const csvCell=v=>{v=String(v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
-function expJSON(){saveFile(`keuangan-${stamp()}.json`,JSON.stringify({app:'keuangan',v:1,tx:rows.map(({id,...r})=>r)}),'application/json')}
+function expJSON(){saveFile(`keuangan-${stamp()}.json`,JSON.stringify({app:'keuangan',v:2,cats:custom,tx:rows.map(({id,...r})=>r)}),'application/json')}
 function expCSV(){
   const r=['Tanggal,Tipe,Kategori,Jumlah,Catatan',...[...rows].sort((a,b)=>a.date.localeCompare(b.date)).map(t=>[t.date,t.type==='out'?'Keluar':'Masuk',csvCell(t.cat),t.amount,csvCell(t.note||'')].join(','))];
   saveFile(`keuangan-${stamp()}.csv`,'\ufeff'+r.join('\r\n'),'text/csv');
@@ -242,14 +261,23 @@ async function impJSON(file){
       .map(t=>({date:t.date,amount:t.amount,type:t.type,cat:t.cat,note:String(t.note||''),at:t.at||Date.now()}));
     if(!list.length)return toast('File tidak berisi transaksi valid');
     if(!confirm(`Ganti ${rows.length} transaksi di HP ini dengan ${list.length} transaksi dari file?`))return;
+    if(d.cats)['out','in'].forEach(t=>(Array.isArray(d.cats[t])?d.cats[t]:[]).forEach(c=>addCat(t,c)));
     await replaceAll(list);await load();render();toast('Cadangan dipulihkan');
   }catch(e){toast('File tidak bisa dibaca')}
 }
 
 /* ---------- Event ---------- */
 $('#prev').onclick=()=>shift(-1);$('#next').onclick=()=>shift(1);
-$('#seg').onclick=e=>{const b=e.target.closest('button');if(!b)return;type=b.dataset.t;cat='';$$('#seg button').forEach(x=>x.classList.toggle('on',x===b));chips()};
-$('#chips').onclick=e=>{const b=e.target.closest('button');if(!b)return;cat=b.dataset.c;chips()};
+$('#seg').onclick=e=>{const b=e.target.closest('button');if(!b)return;type=b.dataset.t;cat='';mg=false;$('#newc').hidden=true;$$('#seg button').forEach(x=>x.classList.toggle('on',x===b));chips()};
+$('#chips').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+  if('add' in d){const p=$('#newc');p.hidden=!p.hidden;if(!p.hidden)$('#newcat').focus();return}
+  if('mg' in d){mg=!mg;chips();return}
+  if('x' in d){const i=custom[type].findIndex(x=>same(x,d.x));if(i>=0){custom[type].splice(i,1);saveCats();if(same(cat,d.x))cat='';chips()}return}
+  cat=d.c;chips();
+};
+$('#addcat').onclick=()=>{const c=addCat(type,$('#newcat').value);if(!c)return toast('Isi nama kategori');cat=c;$('#newcat').value='';$('#newc').hidden=true;mg=false;chips();toast('Kategori ditambahkan')};
+$('#newcat').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('#addcat').click()}};
 $('#amt').oninput=function(){const n=this.value.replace(/\D/g,'').slice(0,12);this.value=n?Number(n).toLocaleString('id-ID'):''};
 $('#save').onclick=save;
 $('nav').onclick=e=>{const b=e.target.closest('button');if(b)show(b.dataset.v)};
