@@ -22,7 +22,12 @@ header{background:var(--card);border:1px solid var(--line);border-top:0;border-r
 .mo button{background:none;border:0;color:var(--mute);font-size:26px;width:44px;height:44px;cursor:pointer}
 .mo span{min-width:8.5em;text-align:center}
 .tbtn{border:1px solid var(--line);background:none;color:var(--mute);border-radius:999px;padding:6px 12px;min-height:36px;font:inherit;font-size:13px;cursor:pointer}
-.lbl{margin:10px 0 0;color:var(--mute);font-size:14px}
+.rng{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rng label{display:block;margin:0;font-size:12px;color:var(--mute)}
+.rng input{margin-top:4px;padding:8px 10px;font-size:15px;min-width:0}
+.pre{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pre #theme{margin-left:auto}
+.lbl{margin:14px 0 0;color:var(--mute);font-size:14px}
 .big{margin:2px 0 0;font-size:clamp(34px,10vw,48px);font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
 .big.neg{color:var(--out)}
 .meter{height:6px;border-radius:3px;background:var(--line);margin-top:16px;overflow:hidden}
@@ -83,11 +88,14 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 </head>
 <body>
 <header>
-  <div class="top">
-    <div class="mo"><button id="prev" aria-label="Bulan sebelumnya">‹</button><span id="mlabel"></span><button id="next" aria-label="Bulan berikutnya">›</button></div>
-    <button id="theme" class="tbtn" aria-label="Ganti tema"></button>
+  <div class="rng">
+    <label><span>Dari</span><input type="date" id="d-from"></label>
+    <label><span>Sampai</span><input type="date" id="d-to"></label>
   </div>
-  <p class="lbl">Sisa bulan ini</p>
+  <div class="pre">
+    <button class="tbtn" data-p="month">Bulan ini</button><button class="tbtn" data-p="7">7 hari</button><button class="tbtn" data-p="all">Semua</button><button id="theme" class="tbtn" aria-label="Ganti tema"></button>
+  </div>
+  <p class="lbl">Sisa pada rentang ini</p>
   <p id="bal" class="big">Rp 0</p>
   <div class="meter" aria-hidden="true"><i id="mtr"></i></div>
   <div class="sub"><span>Masuk <b id="tin"></b></span><span>Keluar <b id="tout"></b></span></div>
@@ -130,7 +138,20 @@ const today=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+
 const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 const sum=(L,t)=>L.filter(x=>x.type===t).reduce((s,x)=>s+x.amount,0);
 
-let db,rows=[],type='out',cat='',mk=today().slice(0,7),persisted=false;
+let db,rows=[],type='out',cat='',persisted=false,dFrom='',dTo='';
+
+/* ---------- Rentang tanggal ---------- */
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const addDays=(s,n)=>{const d=new Date(s+'T12:00:00');d.setDate(d.getDate()+n);return ymd(d)};
+const span=()=>Math.round((new Date(dTo+'T12:00:00')-new Date(dFrom+'T12:00:00'))/864e5)+1;
+const inRange=t=>t.date>=dFrom&&t.date<=dTo;
+function preset(p){
+  const n=new Date(),t=today();
+  if(p==='month'){dFrom=ymd(new Date(n.getFullYear(),n.getMonth(),1));dTo=ymd(new Date(n.getFullYear(),n.getMonth()+1,0))}
+  else if(p==='7'){dFrom=addDays(t,-6);dTo=t}
+  else{const ds=rows.map(r=>r.date).sort();dFrom=ds[0]||t;dTo=ds.length&&ds[ds.length-1]>t?ds[ds.length-1]:t}
+}
+preset('month');
 
 /* ---------- Kategori ---------- */
 let custom={out:[],in:[]},mg=false;
@@ -156,13 +177,12 @@ function chips(){
   if(!any)mg=false;
   $('#chips').innerHTML=L.map(c=>mg&&del(c)?`<button data-x="${esc(c)}" class="xc">${esc(c)} ×</button>`:`<button data-c="${esc(c)}" class="${same(c,cat)?'on':''}">${esc(c)}</button>`).join('')+`<button data-add class="addc">+ Kategori</button>`+(any?`<button data-mg class="addc">${mg?'Selesai':'Kelola'}</button>`:'');
 }
-function shift(n){let[y,m]=mk.split('-').map(Number);m+=n;if(m<1){m=12;y--}if(m>12){m=1;y++}mk=y+'-'+pad(m);render()}
 const fmtDay=d=>new Date(d+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'});
 
 function render(){
-  const L=rows.filter(t=>t.date.startsWith(mk)),[y,m]=mk.split('-').map(Number);
+  const L=rows.filter(inRange);
   const tin=sum(L,'in'),tout=sum(L,'out'),bal=tin-tout;
-  $('#mlabel').textContent=new Date(y,m-1,1).toLocaleDateString('id-ID',{month:'long',year:'numeric'});
+  $('#d-from').value=dFrom;$('#d-to').value=dTo;
   $('#bal').textContent=(bal<0?'−':'')+rp(Math.abs(bal));
   $('#tin').textContent=rp(tin);$('#tout').textContent=rp(tout);
   const pct=tin>0?Math.min(100,tout/tin*100):(tout>0?100:0);$('#mtr').style.width=pct+'%';$('#mtr').parentNode.classList.toggle('over',tout>tin);$('#bal').classList.toggle('neg',bal<0);
@@ -171,7 +191,7 @@ function render(){
 
 function renderList(L){
   L=[...L].sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
-  if(!L.length){$('#v-list').innerHTML='<p class="empty">Belum ada transaksi bulan ini. Buka tab Catat untuk menambah.</p>';return}
+  if(!L.length){$('#v-list').innerHTML='<p class="empty">Belum ada transaksi pada rentang ini. Buka tab Catat untuk menambah.</p>';return}
   let h='',d='';
   for(const t of L){
     if(t.date!==d){d=t.date;h+=`<h3>${esc(fmtDay(d))}</h3>`}
@@ -190,18 +210,21 @@ function donut(e,tot){
   return `<svg viewBox="0 0 42 42" class="donut" role="img" aria-label="Pengeluaran per kategori"><circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--line)" stroke-width="5"/>${s}<text x="21" y="20" text-anchor="middle" class="dt1">Keluar</text><text x="21" y="25" text-anchor="middle" class="dt2">${short(tot)}</text></svg>`;
 }
 
-function trend(){
-  const[y0,m0]=mk.split('-').map(Number),D=[];
-  for(let i=5;i>=0;i--){
-    const d=new Date(y0,m0-1-i,1),k=d.getFullYear()+'-'+pad(d.getMonth()+1),L=rows.filter(t=>t.date.startsWith(k));
-    D.push({l:d.toLocaleDateString('id-ID',{month:'short'}),i:sum(L,'in'),o:sum(L,'out')});
+function trend(L){
+  const n0=span(),B=[];let cut=false;
+  if(n0<=31){for(let i=0;i<n0;i++){const d=addDays(dFrom,i),x=L.filter(t=>t.date===d);B.push({l:String(+d.slice(8)),i:sum(x,'in'),o:sum(x,'out'),t:fmtDay(d)})}}
+  else{
+    const[y1,m1]=dFrom.split('-').map(Number),[y2,m2]=dTo.split('-').map(Number),nm=(y2-y1)*12+m2-m1+1;
+    cut=nm>12;
+    for(let i=Math.max(0,nm-12);i<nm;i++){const d=new Date(y1,m1-1+i,1),k=d.getFullYear()+'-'+pad(d.getMonth()+1),x=L.filter(t=>t.date.startsWith(k));B.push({l:d.toLocaleDateString('id-ID',{month:'short'}),i:sum(x,'in'),o:sum(x,'out'),t:d.toLocaleDateString('id-ID',{month:'long',year:'numeric'})})}
   }
-  const mx=Math.max(1,...D.flatMap(d=>[d.i,d.o]));let s='';
-  D.forEach((d,n)=>{
-    const x=14+n*50,hi=d.i/mx*100,ho=d.o/mx*100;
-    s+=`<rect x="${x}" y="${110-hi}" width="16" height="${hi}" rx="3" fill="var(--in)"><title>Masuk ${rp(d.i)}</title></rect><rect x="${x+19}" y="${110-ho}" width="16" height="${ho}" rx="3" fill="var(--out)"><title>Keluar ${rp(d.o)}</title></rect><text x="${x+17.5}" y="125" text-anchor="middle" class="ax">${esc(d.l)}</text>`;
+  const mx=Math.max(1,...B.flatMap(b=>[b.i,b.o])),c=B.length,slot=300/c,bw=Math.min(16,slot*.4),step=Math.ceil(c/8);let s='';
+  B.forEach((b,k)=>{
+    const x=10+k*slot+(slot-2*bw-2)/2,hi=b.i/mx*100,ho=b.o/mx*100,r=Math.min(3,bw/2);
+    s+=`<rect x="${x}" y="${110-hi}" width="${bw}" height="${hi}" rx="${r}" fill="var(--in)"><title>${esc(b.t)}: masuk ${rp(b.i)}</title></rect><rect x="${x+bw+2}" y="${110-ho}" width="${bw}" height="${ho}" rx="${r}" fill="var(--out)"><title>${esc(b.t)}: keluar ${rp(b.o)}</title></rect>`;
+    if(k%step===0)s+=`<text x="${10+k*slot+slot/2}" y="125" text-anchor="middle" class="ax">${esc(b.l)}</text>`;
   });
-  return `<svg viewBox="0 0 320 132" class="trend" role="img" aria-label="Masuk dan keluar enam bulan terakhir">${s}<line x1="8" y1="110" x2="312" y2="110" stroke="var(--line)"/></svg><div class="key"><span><i style="background:var(--in)"></i>Masuk</span><span><i style="background:var(--out)"></i>Keluar</span></div><p class="note">Batang tertinggi: ${rp(mx)}</p>`;
+  return `<svg viewBox="0 0 320 132" class="trend" role="img" aria-label="Masuk dan keluar pada rentang yang dipilih">${s}<line x1="8" y1="110" x2="312" y2="110" stroke="var(--line)"/></svg><div class="key"><span><i style="background:var(--in)"></i>Masuk</span><span><i style="background:var(--out)"></i>Keluar</span></div><p class="note">Batang tertinggi: ${rp(mx)}${cut?'. Menampilkan 12 bulan terakhir dalam rentang.':''}</p>`;
 }
 
 function renderSum(L){
@@ -210,10 +233,10 @@ function renderSum(L){
   const lg=e.map(([k,v])=>`<li><i style="background:${PAL[ci(k)]}"></i><span>${esc(k)}</span><b>${rp(v)}</b><small>${Math.round(v/tot*100)}%</small></li>`).join('');
   const lb=+LS.get('lastBackup');
   $('#v-sum').innerHTML=`<div class="grid">
-  <div class="card"><h3>Pengeluaran per kategori</h3>${e.length?`<div class="dn">${donut(e,tot)}<ul class="lg">${lg}</ul></div>`:'<p class="empty">Belum ada pengeluaran bulan ini.</p>'}</div>
-  <div class="card"><h3>Masuk dan keluar, 6 bulan</h3>${trend()}</div></div>
+  <div class="card"><h3>Pengeluaran per kategori</h3>${e.length?`<div class="dn">${donut(e,tot)}<ul class="lg">${lg}</ul></div>`:'<p class="empty">Belum ada pengeluaran pada rentang ini.</p>'}</div>
+  <div class="card"><h3>Masuk dan keluar ${span()<=31?'per hari':'per bulan'}</h3>${trend(L)}</div></div>
   <h3>Cadangan data</h3>
-  <p class="note">Data hanya ada di HP ini. Cadangan terakhir: ${lb?new Date(lb).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}):'belum pernah'}.</p>
+  <p class="note">Data hanya ada di HP ini. Cadangan terakhir: ${lb?new Date(lb).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}):'belum pernah'}. Ekspor selalu memuat semua data, bukan hanya rentang yang dipilih.</p>
   <button class="primary" id="bk-json">Ekspor cadangan (JSON)</button>
   <button class="ghost" id="bk-csv">Ekspor ke CSV (Excel)</button>
   <button class="ghost" id="bk-imp">Impor cadangan</button>
@@ -236,8 +259,8 @@ async function save(){
   await req(store('readwrite').add({date,amount,type,cat,note:$('#note').value.trim(),at:Date.now()}));
   await load();
   $('#amt').value='';$('#note').value='';
-  if(date.slice(0,7)!==mk)mk=date.slice(0,7);
-  render();toast('Tersimpan');$('#amt').focus();
+  let adj=false;if(date<dFrom){dFrom=date;adj=true}if(date>dTo){dTo=date;adj=true}
+  render();toast(adj?'Tersimpan, rentang tanggal disesuaikan':'Tersimpan');$('#amt').focus();
 }
 
 /* ---------- Cadangan ---------- */
@@ -267,7 +290,9 @@ async function impJSON(file){
 }
 
 /* ---------- Event ---------- */
-$('#prev').onclick=()=>shift(-1);$('#next').onclick=()=>shift(1);
+$('#d-from').onchange=e=>{if(!e.target.value)return render();dFrom=e.target.value;if(dFrom>dTo)dTo=dFrom;render()};
+$('#d-to').onchange=e=>{if(!e.target.value)return render();dTo=e.target.value;if(dTo<dFrom)dFrom=dTo;render()};
+$('.pre').onclick=e=>{const b=e.target.closest('[data-p]');if(!b)return;preset(b.dataset.p);render()};
 $('#seg').onclick=e=>{const b=e.target.closest('button');if(!b)return;type=b.dataset.t;cat='';mg=false;$('#newc').hidden=true;$$('#seg button').forEach(x=>x.classList.toggle('on',x===b));chips()};
 $('#chips').onclick=e=>{
   const b=e.target.closest('button');if(!b)return;const d=b.dataset;
